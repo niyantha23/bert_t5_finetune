@@ -10,6 +10,7 @@ from torch.utils.data import TensorDataset, DataLoader, RandomSampler, Sequentia
 from transformers import BertForSequenceClassification, AdamW, BertTokenizer, get_linear_schedule_with_warmup
 import sys
 from tqdm import tqdm
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 # Set device
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)
@@ -194,24 +195,26 @@ def main():
     dev_dataset = TensorDataset(dev_input_ids, dev_attention_mask, dev_labels)
     test_dataset = TensorDataset(test_input_ids, test_attention_mask, test_labels)
     # Create dataloaders
-    train_dataloader, val_dataloader = create_dataloaders(train_dataset, dev_dataset)
+    train_dataloader, val_dataloader = create_dataloaders(train_dataset, dev_dataset,64)
     test_dataloader = DataLoader(
         test_dataset,
         sampler=SequentialSampler(test_dataset),
-        batch_size=32
+        batch_size=64
     )
-    
+    epochs=4
     # Load pre-trained BERT model
     model = BertForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=3)
     model = model.to(device)
     
     # Set up optimizer and scheduler
-    optimizer = AdamW(model.parameters(), lr=2e-5, eps=1e-8)
-    total_steps = len(train_dataloader) * 4  # 4 epochs
-    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=0, num_training_steps=total_steps)
+    optimizer = AdamW(model.parameters(), lr=1e-3, eps=1e-8)
+    total_steps = len(train_dataloader) * epochs # 4 epochs
+    
+    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=2)
+    #scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=0, num_training_steps=total_steps)
     
     # Train the model
-    training_stats = train_model(model, optimizer, scheduler, train_dataloader, val_dataloader)
+    training_stats = train_model(model, optimizer, scheduler, train_dataloader, val_dataloader,epochs)
     model = torch.load('bert_model')
     test_stats=evaluate(model,test_dataloader)
     print(test_stats)
