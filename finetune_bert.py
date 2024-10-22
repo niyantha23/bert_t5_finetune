@@ -9,6 +9,7 @@ import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader, RandomSampler, SequentialSampler
 from transformers import BertForSequenceClassification, AdamW, BertTokenizer, get_linear_schedule_with_warmup
 import sys
+from tqdm import tqdm
 # Set device
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -78,7 +79,7 @@ def train_model(model, optimizer, scheduler, train_dataloader, val_dataloader, e
         total_train_loss = 0
         model.train()
         
-        for step, batch in enumerate(train_dataloader):
+        for step, batch in tqdm(enumerate(train_dataloader)):
             b_input_ids, b_input_mask, b_labels = batch[0].to(device), batch[1].to(device), batch[2].to(device)
             optimizer.zero_grad()
             output = model(b_input_ids, attention_mask=b_input_mask, labels=b_labels)
@@ -101,7 +102,7 @@ def train_model(model, optimizer, scheduler, train_dataloader, val_dataloader, e
         total_eval_loss = 0
         best_eval_accuracy = 0
         
-        for batch in val_dataloader:
+        for batch in tqdm(val_dataloader):
             b_input_ids, b_input_mask, b_labels = batch[0].to(device), batch[1].to(device), batch[2].to(device)
             with torch.no_grad():
                 output = model(b_input_ids, attention_mask=b_input_mask, labels=b_labels)
