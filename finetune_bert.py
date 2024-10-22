@@ -140,7 +140,7 @@ def train_model(model, optimizer, scheduler, train_dataloader, val_dataloader, e
 
 def evaluate(model,dataloader):
     predictions = []
-    for batch in dataloader:
+    for batch in tqdm(dataloader):
         b_input_ids = batch[0].to(device)
         b_input_mask = batch[1].to(device)
         b_labels=batch[2].to(device)
