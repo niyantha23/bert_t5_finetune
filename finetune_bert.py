@@ -118,7 +118,7 @@ def train_model(model, optimizer, scheduler, train_dataloader, val_dataloader, e
         validation_time = format_time(time.time() - t0)
         #scheduler.step(avg_val_loss)
         if avg_val_accuracy > best_eval_accuracy:
-            torch.save(model, 'bert_model')
+            torch.save(model, 'bert_model_eng')
             best_eval_accuracy = avg_val_accuracy
         
         print(f"  Accuracy: {avg_val_accuracy:.2f}")
@@ -217,7 +217,7 @@ def main():
     
     # Train the model
     training_stats = train_model(model, optimizer, scheduler, train_dataloader, val_dataloader,epochs)
-    model = torch.load('bert_model')
+    model = torch.load('bert_model_eng')
     test_stats=evaluate(model,test_dataloader)
     print(test_stats)
     return training_stats
