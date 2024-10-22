@@ -12,7 +12,7 @@ import sys
 from tqdm import tqdm
 # Set device
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
+print(device)
 # Load dataset
 def load_data(filename):
     df = pd.read_csv(filename)
