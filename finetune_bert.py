@@ -89,7 +89,7 @@ def train_model(model, optimizer, scheduler, train_dataloader, val_dataloader, e
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
-            #scheduler.step()
+            scheduler.step()
         
         avg_train_loss = total_train_loss / len(train_dataloader)
         training_time = format_time(time.time() - t0)
@@ -116,7 +116,7 @@ def train_model(model, optimizer, scheduler, train_dataloader, val_dataloader, e
         avg_val_accuracy = total_eval_accuracy / len(val_dataloader)
         avg_val_loss = total_eval_loss / len(val_dataloader)
         validation_time = format_time(time.time() - t0)
-        scheduler.step(avg_val_loss)
+        #scheduler.step(avg_val_loss)
         if avg_val_accuracy > best_eval_accuracy:
             torch.save(model, 'bert_model')
             best_eval_accuracy = avg_val_accuracy
@@ -141,6 +141,7 @@ def train_model(model, optimizer, scheduler, train_dataloader, val_dataloader, e
 
 def evaluate(model,dataloader):
     predictions = []
+    total_eval_accuracy=0
     for batch in tqdm(dataloader):
         b_input_ids = batch[0].to(device)
         b_input_mask = batch[1].to(device)
@@ -207,11 +208,11 @@ def main():
     model = model.to(device)
     
     # Set up optimizer and scheduler
-    optimizer = AdamW(model.parameters(), lr=1e-3, eps=1e-8)
+    optimizer = AdamW(model.parameters(), lr=2e-5, eps=1e-8)
     total_steps = len(train_dataloader) * epochs # 4 epochs
     
-    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=2)
-    #scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=0, num_training_steps=total_steps)
+    #scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=2)
+    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=0.1*total_steps, num_training_steps=total_steps)
     
     # Train the model
     training_stats = train_model(model, optimizer, scheduler, train_dataloader, val_dataloader,epochs)
