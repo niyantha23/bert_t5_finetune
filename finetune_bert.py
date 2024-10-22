@@ -201,7 +201,7 @@ def main():
         sampler=SequentialSampler(test_dataset),
         batch_size=64
     )
-    epochs=4
+    epochs=10
     # Load pre-trained BERT model
     model = BertForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=3)
     model = model.to(device)
