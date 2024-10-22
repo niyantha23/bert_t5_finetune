@@ -80,7 +80,7 @@ def train_model(model, optimizer, scheduler, train_dataloader, val_dataloader, e
         total_train_loss = 0
         model.train()
         
-        for step, batch in tqdm(enumerate(train_dataloader)):
+        for batch in tqdm(train_dataloader):
             b_input_ids, b_input_mask, b_labels = batch[0].to(device), batch[1].to(device), batch[2].to(device)
             optimizer.zero_grad()
             output = model(b_input_ids, attention_mask=b_input_mask, labels=b_labels)
@@ -150,11 +150,12 @@ def evaluate(model,dataloader):
             output= model(b_input_ids, token_type_ids=None, attention_mask=b_input_mask)
             logits = output.logits
             logits = logits.detach().cpu().numpy()
-            pred_flat = np.argmax(logits, axis=1).flatten()
-            predictions.extend(list(pred_flat))
-            print(logits,predictions)
-        total_eval_accuracy += flat_accuracy(logits, b_labels)
-        avg_test_accuracy = total_eval_accuracy / len(dataloader)
+            #pred_flat = np.argmax(logits, axis=1).flatten()
+            #predictions.extend(list(pred_flat))
+            #print(logits,predictions)
+            label_ids=b_labels.to('cpu').numpy()
+        total_eval_accuracy += flat_accuracy(logits, label_ids)
+    avg_test_accuracy = total_eval_accuracy / len(dataloader)
     return avg_test_accuracy
 
 # Utility functions
@@ -204,15 +205,15 @@ def main():
     )
     epochs=10
     # Load pre-trained BERT model
-    model = BertForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=3)
+    model = BertForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=3,hidden_dropout_prob=0.2)
     model = model.to(device)
     
     # Set up optimizer and scheduler
-    optimizer = AdamW(model.parameters(), lr=2e-5, eps=1e-8)
+    optimizer = AdamW(model.parameters(), lr=2e-6, eps=1e-8, weight_decay=0.01)
     total_steps = len(train_dataloader) * epochs # 4 epochs
     
     #scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=2)
-    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=0.1*total_steps, num_training_steps=total_steps)
+    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=0.2*total_steps, num_training_steps=total_steps)
     
     # Train the model
     training_stats = train_model(model, optimizer, scheduler, train_dataloader, val_dataloader,epochs)
