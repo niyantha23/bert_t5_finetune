@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader, RandomSampler, SequentialSampler
 from transformers import BertForSequenceClassification, AdamW, BertTokenizer, get_linear_schedule_with_warmup
-
+import sys
 # Set device
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -167,9 +167,16 @@ def format_time(elapsed):
 # Main function
 def main():
     # Load and preprocess data
-    train_filename='"english/english_reviews_train.csv"'
-    val_filename='english/english_reviews_val.csv'
-    test_filename='english/english_reviews_test.csv'
+    if len(sys.argv) != 4:
+        print("Usage: python3 finetune.py <train_filename> <val_filename> <test_filename>")
+        sys.exit(1)
+
+    # train_filename='"english/english_reviews_train.csv"'
+    # val_filename='english/english_reviews_val.csv'
+    # test_filename='english/english_reviews_test.csv'
+    train_filename = sys.argv[1]
+    val_filename = sys.argv[2]
+    test_filename = sys.argv[3]
     train = load_data(train_filename)
     val=load_data(val_filename)
     test=load_data(test_filename)
