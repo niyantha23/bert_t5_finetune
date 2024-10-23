@@ -13,4 +13,4 @@ TEST_FILE=$3
 
 # Run the Python script with the provided filenames
 python3 finetune.py "$TRAIN_FILE" "$VAL_FILE" "$TEST_FILE"
-python finetune_bert.py "english/english_reviews_train.csv" "english/english_reviews_val.csv" "english/english_reviews_test.csv"
+python finetune_bert.py "english/english_reviews_train.csv" "english/english_reviews_val.csv" "english/english_reviews_test.csv" "bert_model_eng"

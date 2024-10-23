@@ -69,7 +69,7 @@ def create_dataloaders(train_dataset, dev_dataset, batch_size=32):
     return train_dataloader, val_dataloader
 
 # Train the model
-def train_model(model, optimizer, scheduler, train_dataloader, val_dataloader, epochs=4):
+def train_model(model, optimizer, scheduler, train_dataloader, val_dataloader, outname, epochs=4):
     total_t0 = time.time()
     training_stats = []
     
@@ -118,7 +118,7 @@ def train_model(model, optimizer, scheduler, train_dataloader, val_dataloader, e
         validation_time = format_time(time.time() - t0)
         #scheduler.step(avg_val_loss)
         if avg_val_accuracy > best_eval_accuracy:
-            torch.save(model, 'bert_model_eng')
+            torch.save(model, outname)
             best_eval_accuracy = avg_val_accuracy
         
         print(f"  Accuracy: {avg_val_accuracy:.2f}")
@@ -171,7 +171,7 @@ def format_time(elapsed):
 # Main function
 def main():
     # Load and preprocess data
-    if len(sys.argv) != 4:
+    if len(sys.argv) != 5:
         print("Usage: python3 finetune.py <train_filename> <val_filename> <test_filename>")
         sys.exit(1)
 
@@ -181,6 +181,7 @@ def main():
     train_filename = sys.argv[1]
     val_filename = sys.argv[2]
     test_filename = sys.argv[3]
+    outname = sys.argv[4]
     train = load_data(train_filename)
     val=load_data(val_filename)
     test=load_data(test_filename)
@@ -203,7 +204,7 @@ def main():
         sampler=SequentialSampler(test_dataset),
         batch_size=64
     )
-    epochs=10
+    epochs=5
     # Load pre-trained BERT model
     model = BertForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=3,hidden_dropout_prob=0.2)
     model = model.to(device)
@@ -213,11 +214,11 @@ def main():
     total_steps = len(train_dataloader) * epochs # 4 epochs
     
     #scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=2)
-    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=0.2*total_steps, num_training_steps=total_steps)
+    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=0, num_training_steps=total_steps)
     
     # Train the model
-    training_stats = train_model(model, optimizer, scheduler, train_dataloader, val_dataloader,epochs)
-    model = torch.load('bert_model_eng')
+    training_stats = train_model(model, optimizer, scheduler, train_dataloader, val_dataloader,outname,epochs)
+    model = torch.load(outname)
     test_stats=evaluate(model,test_dataloader)
     print(test_stats)
     return training_stats
