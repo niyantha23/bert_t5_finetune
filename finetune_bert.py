@@ -206,11 +206,14 @@ def main():
     )
     epochs=5
     # Load pre-trained BERT model
-    model = BertForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=3,hidden_dropout_prob=0.2)
+    #model = BertForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=3,hidden_dropout_prob=0.2)
+    model = BertForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=3)
+
     model = model.to(device)
     
     # Set up optimizer and scheduler
-    optimizer = AdamW(model.parameters(), lr=2e-5, eps=1e-8, weight_decay=0.01)
+    #optimizer = AdamW(model.parameters(), lr=2e-5, eps=1e-8, weight_decay=0.01)
+    optimizer = AdamW(model.parameters(), lr=2e-5, eps=1e-8)
     total_steps = len(train_dataloader) * epochs # 4 epochs
     
     #scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=2)
