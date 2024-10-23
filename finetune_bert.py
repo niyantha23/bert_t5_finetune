@@ -209,7 +209,7 @@ def main():
     model = model.to(device)
     
     # Set up optimizer and scheduler
-    optimizer = AdamW(model.parameters(), lr=2e-6, eps=1e-8, weight_decay=0.01)
+    optimizer = AdamW(model.parameters(), lr=2e-5, eps=1e-8, weight_decay=0.01)
     total_steps = len(train_dataloader) * epochs # 4 epochs
     
     #scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=2)
