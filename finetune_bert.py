@@ -182,6 +182,8 @@ def main():
     val_filename = sys.argv[2]
     test_filename = sys.argv[3]
     outname = sys.argv[4]
+    saved_model_path = sys.argv[5]
+
     train = load_data(train_filename)
     val=load_data(val_filename)
     test=load_data(test_filename)
@@ -207,7 +209,13 @@ def main():
     epochs=5
     # Load pre-trained BERT model
     #model = BertForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=3,hidden_dropout_prob=0.2)
-    model = BertForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=3)
+    if saved_model_path is not None:
+        model=torch.load(saved_model_path)
+        print(f'Loading saved model from :{saved_model_path}')
+    
+    else:
+        print("No saved model found or path not provided, loading BERT pre-trained model")
+        model = BertForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=3)
 
     model = model.to(device)
     
