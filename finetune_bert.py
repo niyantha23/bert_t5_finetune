@@ -11,6 +11,7 @@ from transformers import BertForSequenceClassification, AdamW, BertTokenizer, ge
 import sys
 from tqdm import tqdm
 from torch.optim.lr_scheduler import ReduceLROnPlateau
+import argparse
 # Set device
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)
@@ -171,18 +172,34 @@ def format_time(elapsed):
 # Main function
 def main():
     # Load and preprocess data
-    if len(sys.argv) != 5:
-        print("Usage: python3 finetune.py <train_filename> <val_filename> <test_filename>")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(description='Fine-tune a BERT model for sequence classification.')
+
+    # File paths
+    parser.add_argument('--train_filename', type=str, required=True, help='Path to the training dataset file (CSV).')
+    parser.add_argument('--val_filename', type=str, required=True, help='Path to the validation dataset file (CSV).')
+    parser.add_argument('--test_filename', type=str, required=True, help='Path to the test dataset file (CSV).')
+    parser.add_argument('--outname', type=str, required=True, help='Path to save the trained model.')
+    parser.add_argument('--saved_model_path', type=str, required=False, help='Path to a saved model, if any.')
+
+    # Hyperparameters
+    parser.add_argument('--batch_size', type=int, default=64, help='Batch size for training and validation.')
+    parser.add_argument('--epochs', type=int, default=5, help='Number of training epochs.')
+    parser.add_argument('--learning_rate', type=float, default=2e-5, help='Learning rate for AdamW optimizer.')
+    parser.add_argument('--epsilon', type=float, default=1e-8, help='Epsilon value for the AdamW optimizer.')
+    parser.add_argument('--weight_decay', type=float, default=0.01, help='Weight decay for the optimizer.')
+    parser.add_argument('--warmup_steps', type=int, default=0, help='Number of warmup steps for learning rate scheduler.')
+    parser.add_argument('--max_len', type=int, default=512, help='Maximum sequence length for tokenization.')
+
+    args = parser.parse_args()
 
     # train_filename='"english/english_reviews_train.csv"'
     # val_filename='english/english_reviews_val.csv'
     # test_filename='english/english_reviews_test.csv'
-    train_filename = sys.argv[1]
-    val_filename = sys.argv[2]
-    test_filename = sys.argv[3]
-    outname = sys.argv[4]
-    saved_model_path = sys.argv[5]
+    train_filename = args.train_filename
+    val_filename = args.val_filename
+    test_filename = args.test_filename
+    outname = args.outname
+    saved_model_path = args.saved_model_path
 
     train = load_data(train_filename)
     val=load_data(val_filename)
@@ -200,13 +217,13 @@ def main():
     dev_dataset = TensorDataset(dev_input_ids, dev_attention_mask, dev_labels)
     test_dataset = TensorDataset(test_input_ids, test_attention_mask, test_labels)
     # Create dataloaders
-    train_dataloader, val_dataloader = create_dataloaders(train_dataset, dev_dataset,64)
+    train_dataloader, val_dataloader = create_dataloaders(train_dataset, dev_dataset,args.batch_size)
     test_dataloader = DataLoader(
         test_dataset,
         sampler=SequentialSampler(test_dataset),
-        batch_size=64
+        batch_size=args.batch_size
     )
-    epochs=5
+    epochs=args.epochs
     # Load pre-trained BERT model
     #model = BertForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=3,hidden_dropout_prob=0.2)
     if saved_model_path is not None:
@@ -215,17 +232,19 @@ def main():
     
     else:
         print("No saved model found or path not provided, loading BERT pre-trained model")
-        model = BertForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=3)
+        #model = BertForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=3)
+        model = BertForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=3,hidden_dropout_prob=0.2)
+
 
     model = model.to(device)
     
     # Set up optimizer and scheduler
-    #optimizer = AdamW(model.parameters(), lr=2e-5, eps=1e-8, weight_decay=0.01)
-    optimizer = AdamW(model.parameters(), lr=2e-5, eps=1e-8)
+    optimizer = AdamW(model.parameters(), lr=args.learning_rate, eps=args.epsilon, weight_decay=args.weight_decay)
+    #optimizer = AdamW(model.parameters(), lr=2e-5, eps=1e-8)
     total_steps = len(train_dataloader) * epochs # 4 epochs
     
     #scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=2)
-    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=0, num_training_steps=total_steps)
+    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=args.warmup_steps, num_training_steps=total_steps)
     
     # Train the model
     training_stats = train_model(model, optimizer, scheduler, train_dataloader, val_dataloader,outname,epochs)
