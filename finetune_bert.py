@@ -208,7 +208,7 @@ def main():
     val_reviews, val_labels =preprocess_data(val)
     test_reviews, test_labels =preprocess_data(test)
     # Load tokenizer and tokenize data
-    tokenizer = BertTokenizer.from_pretrained('bert-base-multilingual-cased', do_lower_case=True)
+    tokenizer = BertTokenizer.from_pretrained('bert-base-multilingual-cased')
     train_input_ids, train_attention_mask, train_labels = tokenize_reviews(train_reviews, train_labels, tokenizer)
     dev_input_ids, dev_attention_mask, dev_labels = tokenize_reviews(val_reviews, val_labels, tokenizer)
     test_input_ids, test_attention_mask, test_labels = tokenize_reviews(test_reviews, test_labels, tokenizer)
