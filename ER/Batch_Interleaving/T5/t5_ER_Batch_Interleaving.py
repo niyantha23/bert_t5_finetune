@@ -171,6 +171,7 @@ def main():
     second_train_filename = sys.argv[3]
     second_val_filename = sys.argv[4]
     base_model_dir = sys.argv[5]
+    finetuned_model_dir = sys.argv[6]
     
     tokenizer = T5Tokenizer.from_pretrained('t5-small')
     model = T5ForConditionalGeneration.from_pretrained("t5-small")
