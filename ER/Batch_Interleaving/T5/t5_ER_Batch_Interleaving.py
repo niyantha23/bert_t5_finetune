@@ -63,6 +63,10 @@ def tokenize_reviews(reviews, labels, tokenizer, instruction, max_len=512):
     
     return input_ids, attention_masks, decoder_input_ids
 
+def format_time(elapsed):
+    elapsed_rounded = int(round(elapsed))
+    return str(datetime.timedelta(seconds=elapsed_rounded))
+
 def create_interleaved_dataloader(first_dataset, second_dataset, batch_size, first_ratio=0.125):
     first_size = int(batch_size * first_ratio)  # Number of samples from the first dataset
     second_size = batch_size - first_size  # Remaining samples from the second dataset
