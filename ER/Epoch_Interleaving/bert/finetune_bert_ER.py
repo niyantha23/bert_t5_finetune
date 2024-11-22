@@ -1,0 +1,361 @@
+import numpy as np
+import pandas as pd
+import time
+import datetime
+import random
+import os
+from sklearn.preprocessing import LabelEncoder
+import torch
+import torch.nn as nn
+from torch.utils.data import TensorDataset, DataLoader, RandomSampler, SequentialSampler
+from transformers import BertForSequenceClassification, AdamW, BertTokenizer, get_linear_schedule_with_warmup
+import sys
+from tqdm import tqdm
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+import argparse
+# Set device
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+print(device)
+
+# Load dataset
+
+
+def load_data(filename, rows):
+    df = pd.read_csv(filename, nrows=rows)
+    return df
+
+# Preprocess data
+
+
+def preprocess_data(df):
+    reviews = df['review_body']
+    labels = df['sentiment_label']
+
+    encoder = LabelEncoder()
+    labels = encoder.fit_transform(labels)
+
+    return reviews, labels
+
+# Tokenize reviews
+
+
+def tokenize_reviews(reviews, labels, tokenizer, max_len=512):
+    input_ids = []
+    attention_masks = []
+
+    for review in reviews:
+        encoded_dict = tokenizer.encode_plus(
+            review,
+            add_special_tokens=True,
+            max_length=max_len,
+            pad_to_max_length=True,
+            return_attention_mask=True,
+            return_tensors='pt'
+        )
+        input_ids.append(encoded_dict['input_ids'])
+        attention_masks.append(encoded_dict['attention_mask'])
+
+    input_ids = torch.cat(input_ids, dim=0)
+    attention_masks = torch.cat(attention_masks, dim=0)
+    labels = torch.tensor(labels)
+
+    return input_ids, attention_masks, labels
+
+# Create DataLoader
+
+
+def create_dataloaders(train_dataset, dev_dataset, batch_size=32):
+    train_dataloader = DataLoader(
+        train_dataset,
+        sampler=RandomSampler(train_dataset),
+        batch_size=batch_size
+    )
+
+    val_dataloader = DataLoader(
+        dev_dataset,
+        sampler=SequentialSampler(dev_dataset),
+        batch_size=batch_size
+    )
+
+    return train_dataloader, val_dataloader
+
+# Train the model
+
+
+def train_model(model, optimizer, scheduler, first_train_dataloader, second_train_dataloader, val_dataloader, outname, epochs=12):
+    total_t0 = time.time()
+    training_stats = []
+    
+    for epoch_i in range(0, epochs):
+
+        if (epoch_i + 1) % 4 == 0:
+            print(f'\n======== Epoch {epoch_i + 1} / {epochs} ========')
+            print('Training on French data...')
+            current_dataloader = first_train_dataloader
+        else:
+            print(f'\n======== Epoch {epoch_i + 1} / {epochs} ========')
+            print('Training on Spanish data...')
+            current_dataloader = second_train_dataloader
+        print(f'\n======== Epoch {epoch_i + 1} / {epochs} ========')
+        print('Training...')
+
+        t0 = time.time()
+        total_train_loss = 0
+        model.train()
+
+        for batch in tqdm(current_dataloader):
+            b_input_ids, b_input_mask, b_labels = batch[0].to(
+                device), batch[1].to(device), batch[2].to(device)
+            optimizer.zero_grad()
+            output = model(
+                b_input_ids, attention_mask=b_input_mask, labels=b_labels)
+            loss = output.loss
+            total_train_loss += loss.item()
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            optimizer.step()
+            scheduler.step()
+        
+        avg_train_loss = total_train_loss / len(current_dataloader)
+        training_time = format_time(time.time() - t0)
+        print(f"  Average training loss: {avg_train_loss:.2f}")
+        print(f"  Training epoch took: {training_time}")
+
+        print("\nRunning Validation...")
+        t0 = time.time()
+        model.eval()
+        total_eval_accuracy = 0
+        total_eval_loss = 0
+        best_eval_accuracy = 0
+
+        for batch in tqdm(val_dataloader):
+            b_input_ids, b_input_mask, b_labels = batch[0].to(
+                device), batch[1].to(device), batch[2].to(device)
+            with torch.no_grad():
+                output = model(
+                    b_input_ids, attention_mask=b_input_mask, labels=b_labels)
+            loss = output.loss
+            total_eval_loss += loss.item()
+            logits = output.logits.detach().cpu().numpy()
+            label_ids = b_labels.to('cpu').numpy()
+            total_eval_accuracy += flat_accuracy(logits, label_ids)
+        
+        avg_val_accuracy = total_eval_accuracy / len(val_dataloader)
+        avg_val_loss = total_eval_loss / len(val_dataloader)
+        validation_time = format_time(time.time() - t0)
+        # scheduler.step(avg_val_loss)
+        if avg_val_accuracy > best_eval_accuracy:
+            torch.save(model, outname)
+            best_eval_accuracy = avg_val_accuracy
+
+        print(f"  Accuracy: {avg_val_accuracy:.2f}")
+        print(f"  Validation Loss: {avg_val_loss:.2f}")
+        print(f"  Validation took: {validation_time}")
+
+        training_stats.append({
+            'epoch': epoch_i + 1,
+            'Training Loss': avg_train_loss,
+            'Valid. Loss': avg_val_loss,
+            'Valid. Accur.': avg_val_accuracy,
+            'Training Time': training_time,
+            'Validation Time': validation_time
+        })
+    
+    print("\nTraining complete!")
+    print(f"Total training took {format_time(time.time() - total_t0)}")
+    return training_stats
+
+
+def evaluate(model, dataloader):
+    predictions = []
+    total_eval_accuracy = 0
+    for batch in tqdm(dataloader):
+        b_input_ids = batch[0].to(device)
+        b_input_mask = batch[1].to(device)
+        b_labels = batch[2].to(device)
+        with torch.no_grad():
+            output = model(b_input_ids, token_type_ids=None,
+                           attention_mask=b_input_mask)
+            logits = output.logits
+            logits = logits.detach().cpu().numpy()
+            # pred_flat = np.argmax(logits, axis=1).flatten()
+            # predictions.extend(list(pred_flat))
+            # print(logits,predictions)
+            label_ids = b_labels.to('cpu').numpy()
+        total_eval_accuracy += flat_accuracy(logits, label_ids)
+    avg_test_accuracy = total_eval_accuracy / len(dataloader)
+    return avg_test_accuracy
+
+# Utility functions
+
+
+def flat_accuracy(preds, labels):
+    pred_flat = np.argmax(preds, axis=1).flatten()
+    labels_flat = labels.flatten()
+    return np.sum(pred_flat == labels_flat) / len(labels_flat)
+
+
+def format_time(elapsed):
+    elapsed_rounded = int(round(elapsed))
+    return str(datetime.timedelta(seconds=elapsed_rounded))
+
+# Main function
+
+
+def main():
+    # Load and preprocess data
+    parser = argparse.ArgumentParser(
+        description='Fine-tune a BERT model for sequence classification.')
+
+    # File paths
+    parser.add_argument('--base_lang', type=str,
+                        required=True, help='Base Language')
+    parser.add_argument('--first_train_filename', type=str,
+                        required=True, help='Path to the training dataset file (CSV).')
+    parser.add_argument('--first_val_filename', type=str, required=True,
+                        help='Path to the validation dataset file (CSV).')
+    parser.add_argument('--first_test_filename', type=str,
+                        required=True, help='Path to the test dataset file (CSV).')
+
+    parser.add_argument('--finetune_lang', type=str,
+                        required=True, help='Finetuning Language')
+    parser.add_argument('--second_train_filename', type=str,
+                        required=True, help='Path to the training dataset file (CSV).')
+    parser.add_argument('--second_val_filename', type=str, required=True,
+                        help='Path to the validation dataset file (CSV).')
+    parser.add_argument('--second_test_filename', type=str,
+                        required=True, help='Path to the test dataset file (CSV).')
+
+    # Base Model
+    parser.add_argument('--base_model_file', type=str, required=True,
+                        help='Path to load the base model.')
+    parser.add_argument('--finetuned_model_path', type=str,
+                        required=True, help='Path to save fine tuned model')
+
+    # Hyperparameters
+    parser.add_argument('--batch_size', type=int, default=64,
+                        help='Batch size for training and validation.')
+    parser.add_argument('--epochs', type=int, default=5,
+                        help='Number of training epochs.')
+    parser.add_argument('--learning_rate', type=float,
+                        default=2e-5, help='Learning rate for AdamW optimizer.')
+    parser.add_argument('--epsilon', type=float, default=1e-8,
+                        help='Epsilon value for the AdamW optimizer.')
+    parser.add_argument('--weight_decay', type=float,
+                        default=0.01, help='Weight decay for the optimizer.')
+    parser.add_argument('--warmup_steps', type=int, default=0,
+                        help='Number of warmup steps for learning rate scheduler.')
+    parser.add_argument('--max_len', type=int, default=512,
+                        help='Maximum sequence length for tokenization.')
+
+    args = parser.parse_args()
+
+
+    # train_filename='"english/english_reviews_train.csv"'
+    # val_filename='english/english_reviews_val.csv'
+    # test_filename='english/english_reviews_test.csv'
+
+    base_lang = args.base_lang
+    first_train_filename = args.first_train_filename
+    first_val_filename = args.first_val_filename
+    first_test_filename = args.first_test_filename
+
+    finetuned_lang = args.finetune_lang
+    second_train_filename = args.second_train_filename
+    second_val_filename = args.second_val_filename
+    second_test_filename = args.second_test_filename
+
+    
+    base_model = args.base_model_file
+    finetuned_output_path = args.finetuned_model_path
+
+    first_train_data = load_data(first_train_filename, 5000)
+    first_val_data = load_data(first_val_filename, None)
+    second_train_data = load_data(second_train_filename, None)
+    second_val_data = load_data(second_val_filename, None)
+    second_test_data = load_data(second_test_filename, None)
+    
+    first_reviews_train, first_labels_train = preprocess_data(first_train_data)
+    first_reviews_val, first_labels_val = preprocess_data(first_val_data)
+    second_reviews_train, second_labels_train = preprocess_data(
+        second_train_data)
+    second_reviews_val, second_labels_val = preprocess_data(second_val_data)
+    second_reviews_test, second_labels_test = preprocess_data(second_test_data)
+
+    # Load tokenizer and tokenize data
+    tokenizer = BertTokenizer.from_pretrained('bert-base-multilingual-cased')
+
+    # Tokenize both the datasets
+    first_input_ids_train, first_attention_mask_train, first_decoder_input_ids_train = tokenize_reviews(first_reviews_train, first_labels_train, tokenizer)
+    val_input_ids_first_val, val_attention_mask_first_val, val_decoder_input_ids_first_val = tokenize_reviews(first_reviews_val, first_labels_val, tokenizer)
+    second_input_ids_train, second_attention_mask_train, second_decoder_input_ids_train = tokenize_reviews(second_reviews_train, second_labels_train, tokenizer)
+    val_input_ids_second_val, val_attention_mask_second_val, val_decoder_input_ids_second_val = tokenize_reviews(second_reviews_val, second_labels_val, tokenizer)
+    test_input_ids_second_test, test_attention_mask_second_test, test_decoder_input_ids_second_test = tokenize_reviews(second_reviews_val, second_labels_val, tokenizer)
+
+    # Create datasets
+    first_dataset_training = TensorDataset(
+        first_input_ids_train, first_attention_mask_train, first_decoder_input_ids_train)
+    first_dataset_validation = TensorDataset(
+        val_input_ids_first_val, val_attention_mask_first_val, val_decoder_input_ids_first_val)
+    second_dataset_training = TensorDataset(
+        second_input_ids_train, second_attention_mask_train, second_decoder_input_ids_train)
+    second_dataset_validation = TensorDataset(
+        val_input_ids_second_val, val_attention_mask_second_val, val_decoder_input_ids_second_val)
+    second_dataset_test = TensorDataset(
+        test_input_ids_second_test, test_attention_mask_second_test, test_decoder_input_ids_second_test)
+    
+    # Create dataloaders
+    first_dataloader_training, first_dataloader_validation = create_dataloaders(
+        first_dataset_training,
+        first_dataset_validation, args.batch_size)
+    second_dataloader_training, second_dataloader_validation = create_dataloaders(
+        second_dataset_training,
+        second_dataset_validation, batch_size=64)
+
+    second_test_dataloader = DataLoader(
+        second_dataset_test,
+        sampler=SequentialSampler(second_dataset_test),
+        batch_size=args.batch_size
+    )
+
+    epochs = args.epochs
+    # Load pre-trained BERT model
+    # model = BertForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=3,hidden_dropout_prob=0.2)
+    if base_model is not None:
+        model = torch.load(base_model)
+        # model = torch.load(base_model, map_location=torch.device('cpu'))
+        print(f'Loading saved model from :{base_model}')
+
+    else:
+        print("No base model found or path not provided, loading BERT pre-trained model")
+        # model = BertForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=3)
+        model = BertForSequenceClassification.from_pretrained(
+            "bert-base-multilingual-cased", num_labels=3, hidden_dropout_prob=0.2)
+
+    model = model.to(device)
+
+    # Set up optimizer and scheduler
+    optimizer = AdamW(model.parameters(), lr=args.learning_rate,
+                      eps=args.epsilon, weight_decay=args.weight_decay)
+    total_steps = len(second_dataloader_training) * epochs  # 4 epochs
+
+    # scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=2)
+    scheduler = get_linear_schedule_with_warmup(
+        optimizer, num_warmup_steps=args.warmup_steps, num_training_steps=total_steps)
+    
+    output_dir = os.path.dirname(args.finetuned_model_path)
+    if output_dir and not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+        print('Output file created')
+    
+    # Train the model
+    training_stats = train_model(
+        model, optimizer, scheduler, first_dataloader_training, second_dataloader_training, second_dataloader_validation, finetuned_output_path, epochs)
+    model = torch.load(finetuned_output_path)
+    test_stats = evaluate(model, second_test_dataloader)
+    print(test_stats)
+    return training_stats
+
+
+if __name__ == "__main__":
+    main()

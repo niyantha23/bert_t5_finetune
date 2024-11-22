@@ -1,0 +1,26 @@
+#!/bin/bash
+
+#SBATCH --account=swabhas_1457
+#SBATCH --partition=gpu
+#SBATCH --gpus-per-task=2
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=64G
+#SBATCH --time=12:00:00
+
+module purge
+module load gcc/11.3.0
+module load python/3.11.3
+
+sh ./finetune_bert_ER.sh 
+                English
+                dataset/english/english_reviews_train.csv \
+                dataset/english/english_reviews_val.csv \
+                dataset/english/english_reviews_test.csv \
+                Spanish
+                dataset/spanish/spanish_reviews_train.csv \
+                dataset/spanish/spanish_reviews_val.csv \
+                dataset/spanish/spanish_reviews_test.csv \
+                models/mbert_model_en_5 \
+                models/french_spanish_trained_model/cl_model_r2.pth
