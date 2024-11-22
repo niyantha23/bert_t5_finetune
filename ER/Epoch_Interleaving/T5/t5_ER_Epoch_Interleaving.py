@@ -4,6 +4,7 @@ import time
 import datetime
 import random
 from sklearn.preprocessing import LabelEncoder
+from sklearn.utils import shuffle
 import torch
 from torch.utils.data import TensorDataset, DataLoader, RandomSampler, SequentialSampler
 from transformers import T5ForConditionalGeneration, T5Tokenizer, AdamW, get_linear_schedule_with_warmup
@@ -14,8 +15,23 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print("Device:", device)
 
 def load_data(filename, rows):
-    df = pd.read_csv(filename, nrows=rows)
-    return df
+    df = pd.read_csv(filename)
+
+    if rows is None:
+        return shuffle(df, random_state=42).reset_index(drop=True)
+
+    unique_labels = df['sentiment_label'].unique()
+    num_labels = len(unique_labels)
+    rows_per_label = rows // num_labels
+    balanced_df = pd.DataFrame()
+
+    for label in unique_labels:
+        label_df = df[df['sentiment_label'] == label]
+        sampled_label_df = label_df.sample(n=rows_per_label, random_state=42)
+        balanced_df = pd.concat([balanced_df, sampled_label_df])
+
+    balanced_df = shuffle(balanced_df, random_state=42).reset_index(drop=True)
+    return balanced_df
 
 def preprocess_data(df):
     reviews = df['review_body']
