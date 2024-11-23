@@ -20,7 +20,6 @@ print(device)
 
 # Load dataset
 
-
 def load_data(filename, rows):
     df = pd.read_csv(filename)
 
@@ -93,10 +92,36 @@ def create_dataloaders(train_dataset, dev_dataset, batch_size=32):
 
     return train_dataloader, val_dataloader
 
+def create_mixed_validation_dataset(first_val_dataset, second_val_dataset, ratio_first=0.3, ratio_second=0.7):
+    first_val_size = min(len(first_val_dataset), int(len(first_val_dataset) * ratio_first))
+    second_val_size = min(len(second_val_dataset), int(len(second_val_dataset) * ratio_second))
+
+    mixed_first_val_data = random.sample(list(first_val_dataset), first_val_size)
+    mixed_second_val_data = random.sample(list(second_val_dataset), second_val_size)
+
+    mixed_val_data = mixed_first_val_data + mixed_second_val_data
+    random.shuffle(mixed_val_data)
+
+    mixed_input_ids = []
+    mixed_attention_masks = []
+    mixed_decoder_input_ids = []
+
+    for x in mixed_val_data:
+        mixed_input_ids.append(x[0].unsqueeze(0))
+        mixed_attention_masks.append(x[1].unsqueeze(0))
+        mixed_decoder_input_ids.append(x[2].unsqueeze(0))
+
+    mixed_input_ids = torch.cat(mixed_input_ids, dim=0)
+    mixed_attention_masks = torch.cat(mixed_attention_masks, dim=0)
+    mixed_decoder_input_ids = torch.cat(mixed_decoder_input_ids, dim=0)
+
+    mixed_val_dataset = TensorDataset(mixed_input_ids, mixed_attention_masks, mixed_decoder_input_ids)
+    return mixed_val_dataset
+
 # Train the model
 
 
-def train_model(model, optimizer, scheduler, first_train_dataloader, second_train_dataloader, val_dataloader, outname, epochs=12):
+def train_model(model, optimizer, scheduler, first_train_dataloader, second_train_dataloader, first_valdataloader, second_valdataloader, outname, epochs=12):
     total_t0 = time.time()
     training_stats = []
     
@@ -106,10 +131,16 @@ def train_model(model, optimizer, scheduler, first_train_dataloader, second_trai
             print(f'\n======== Epoch {epoch_i + 1} / {epochs} ========')
             print('Training on French data...')
             current_dataloader = first_train_dataloader
+            mixed_val_dataset = create_mixed_validation_dataset(first_valdataloader.dataset, second_valdataloader.dataset)
+            mixed_val_dataloader = DataLoader(mixed_val_dataset, sampler=SequentialSampler(mixed_val_dataset), batch_size=64)
+            val_dataloader = mixed_val_dataloader
+            
         else:
             print(f'\n======== Epoch {epoch_i + 1} / {epochs} ========')
             print('Training on Spanish data...')
             current_dataloader = second_train_dataloader
+            val_dataloader = second_valdataloader
+
         print(f'\n======== Epoch {epoch_i + 1} / {epochs} ========')
         print('Training...')
 
@@ -291,8 +322,7 @@ def main():
     
     first_reviews_train, first_labels_train = preprocess_data(first_train_data)
     first_reviews_val, first_labels_val = preprocess_data(first_val_data)
-    second_reviews_train, second_labels_train = preprocess_data(
-        second_train_data)
+    second_reviews_train, second_labels_train = preprocess_data(second_train_data)
     second_reviews_val, second_labels_val = preprocess_data(second_val_data)
     second_reviews_test, second_labels_test = preprocess_data(second_test_data)
 
@@ -364,7 +394,7 @@ def main():
     
     # Train the model
     training_stats = train_model(
-        model, optimizer, scheduler, first_dataloader_training, second_dataloader_training, second_dataloader_validation, finetuned_output_path, epochs)
+        model, optimizer, scheduler, first_dataloader_training, second_dataloader_training, first_dataloader_validation, second_dataloader_validation, finetuned_output_path, epochs)
     model = torch.load(finetuned_output_path)
     test_stats = evaluate(model, second_test_dataloader)
     print(test_stats)
