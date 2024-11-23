@@ -32,9 +32,4 @@ python3 finetune_bert_ER.py \
     --finetuned_model_path "$FINETUNED_MODEL_OUT"
 
 
-python ER/Epoch_Interleaving/bert/Similarity/sim_test.py --base_lang fren
-ch --first_train_filename french/french_reviews_train.csv --first_val_filename french/french_re
-views_val.csv --first_test_filename french/french_reviews_test.csv --finetune_lang Spanish --se
-cond_train_filename dataset/spanish/spanish_reviews_train.csv second_val_filename dataset/spani
-sh/spanish_reviews_val.csv --second_test_filename dataset/spanish/spanish_reviews_test.csv --ba
-se_model_file models/mbert_model_frn_5--finetuned_model_path /models2/simtest
+python ER/Epoch_Interleaving/bert/Similarity/sim_test.py --base_lang french --first_train_filename french/french_reviews_train.csv --first_val_filename french/french_reviews_val.csv --first_test_filename french/french_reviews_test.csv --finetune_lang Spanish --second_train_filename dataset/spanish/spanish_reviews_train.csv --second_val_filename dataset/spanish/spanish_reviews_val.csv --second_test_filename dataset/spanish/spanish_reviews_test.csv --base_model_file models/mbert_model_frn_5 --finetuned_model_path /models2/simtest --outname simtest_mbert_frn_spn
