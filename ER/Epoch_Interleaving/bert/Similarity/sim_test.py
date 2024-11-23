@@ -246,7 +246,7 @@ def format_time(elapsed):
 
 # Main function
 
-def find_top_k_similar_dataset(model, dataset1, dataset2, tokenizer, device, top_k=100, batch_size=64, max_len=512):
+def find_top_k_similar_dataset(model, dataset1, dataset2, tokenizer, device, top_k=100, batch_size=128, max_len=512):
     """
     Finds the top k most similar data points in dataset1 for all points in dataset2 combined, using cosine similarity, optimized for GPU.
     """
@@ -258,7 +258,7 @@ def find_top_k_similar_dataset(model, dataset1, dataset2, tokenizer, device, top
         """Generates embeddings for a dataset."""
         dataloader = DataLoader(dataset, batch_size=batch_size)
         embeddings = []
-        for batch in dataloader:
+        for batch in tqdm(dataloader):
             input_ids, attention_masks = [t.to(device) for t in batch[:2]]  # Ignore labels if present
             with torch.no_grad():
                 outputs = model.bert(input_ids, attention_mask=attention_masks)
@@ -269,11 +269,11 @@ def find_top_k_similar_dataset(model, dataset1, dataset2, tokenizer, device, top
     reviews1, labels1 = preprocess_data(dataset1)
     reviews2, labels2 = preprocess_data(dataset2)
     
-    input_ids1, attention_masks1, _ = tokenize_reviews(reviews1, labels1, tokenizer, max_len)
-    input_ids2, attention_masks2, _ = tokenize_reviews(reviews2, labels2, tokenizer, max_len)
+    input_ids1, attention_masks1, labels1 = tokenize_reviews(reviews1, labels1, tokenizer, max_len)
+    input_ids2, attention_masks2, labels2 = tokenize_reviews(reviews2, labels2, tokenizer, max_len)
 
-    dataset1_tensor = TensorDataset(input_ids1, attention_masks1)
-    dataset2_tensor = TensorDataset(input_ids2, attention_masks2)
+    dataset1_tensor = TensorDataset(input_ids1, attention_masks1,labels1)
+    dataset2_tensor = TensorDataset(input_ids2, attention_masks2,labels2)
 
     # Compute embeddings for dataset1 and dataset2
     dataset1_embeddings = get_embeddings(dataset1_tensor)  # [N1, hidden_dim]
@@ -296,9 +296,25 @@ def find_top_k_similar_dataset(model, dataset1, dataset2, tokenizer, device, top
     top_k_data = [dataset1_tensor[idx] for idx in top_k_indices.cpu().tolist()]
 
     # Create a new dataset with the top_k similar data points
-    top_k_dataset = TensorDataset(*zip(*top_k_data))  # Unzip to match (input_ids, attention_masks)
+    reviews = []
+    attention_masks = []
+    labels = []
 
-    return top_k_dataset
+    for input_ids, attention_mask, label in top_k_data:
+        # Decode the review text
+        review_text = tokenizer.decode(input_ids, skip_special_tokens=True)
+        reviews.append(review_text)
+        attention_masks.append(attention_mask.cpu().numpy())  # Convert mask tensor to numpy
+        labels.append(label.item())  # Convert label tensor to a scalar value
+
+    # Create DataFrame
+    df = pd.DataFrame({
+        'review_body': reviews,
+        'AttentionMask': attention_masks,
+        'sentiment_label': labels
+    })
+
+    return df
 
 def main():
     # Load and preprocess data
@@ -306,6 +322,8 @@ def main():
         description='Fine-tune a BERT model for sequence classification.')
 
     # File paths
+    parser.add_argument('--outname', type=str, required=True, help='Path to save the trained model.')
+
     parser.add_argument('--base_lang', type=str,
                         required=True, help='Base Language')
     parser.add_argument('--first_train_filename', type=str,
@@ -354,6 +372,7 @@ def main():
     # test_filename='english/english_reviews_test.csv'
 
     base_lang = args.base_lang
+    outname = args.outname
     first_train_filename = args.first_train_filename
     first_val_filename = args.first_val_filename
     first_test_filename = args.first_test_filename
@@ -366,22 +385,41 @@ def main():
     
     base_model = args.base_model_file
     finetuned_output_path = args.finetuned_model_path
+    epochs = args.epochs
+    # Load pre-trained BERT model
+    # model = BertForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=3,hidden_dropout_prob=0.2)
+    
+    # Load tokenizer and tokenize data
+    model_initial = BertForSequenceClassification.from_pretrained(
+            "bert-base-multilingual-cased", num_labels=3, hidden_dropout_prob=0.2)
+    tokenizer = BertTokenizer.from_pretrained('bert-base-multilingual-cased')
 
     #first_train_data = load_data(first_train_filename, 5000)
     first_train_data = load_data(first_train_filename, None)
     first_val_data = load_data(first_val_filename, None)
     second_train_data = load_data(second_train_filename, None)
+    #second_train_data = load_data(second_train_filename, 5000)
     second_val_data = load_data(second_val_filename, None)
     second_test_data = load_data(second_test_filename, None)
+
+    top_similar_dataset = find_top_k_similar_dataset(
+    model=model_initial,
+    dataset1=first_train_data,  # Example first dataset
+    dataset2=second_train_data,  # Example second dataset
+    tokenizer=tokenizer,
+    device=device,
+    top_k=5000
+    )
     
-    first_reviews_train, first_labels_train = preprocess_data(first_train_data)
+
+    #first_reviews_train, first_labels_train = preprocess_data(first_train_data)
+    first_reviews_train, first_labels_train = preprocess_data(top_similar_dataset)
     first_reviews_val, first_labels_val = preprocess_data(first_val_data)
     second_reviews_train, second_labels_train = preprocess_data(second_train_data)
     second_reviews_val, second_labels_val = preprocess_data(second_val_data)
     second_reviews_test, second_labels_test = preprocess_data(second_test_data)
 
-    # Load tokenizer and tokenize data
-    tokenizer = BertTokenizer.from_pretrained('bert-base-multilingual-cased')
+    
 
     # Tokenize both the datasets
     first_input_ids_train, first_attention_mask_train, first_decoder_input_ids_train = tokenize_reviews(first_reviews_train, first_labels_train, tokenizer)
@@ -416,9 +454,6 @@ def main():
         batch_size=args.batch_size
     )
 
-    epochs = args.epochs
-    # Load pre-trained BERT model
-    # model = BertForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=3,hidden_dropout_prob=0.2)
     if base_model is not None:
         model = torch.load(base_model)
         # model = torch.load(base_model, map_location=torch.device('cpu'))
@@ -441,27 +476,19 @@ def main():
     scheduler = get_linear_schedule_with_warmup(
         optimizer, num_warmup_steps=args.warmup_steps, num_training_steps=total_steps)
     
-    output_dir = os.path.dirname(args.finetuned_model_path)
-    if output_dir and not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-        print('Output file created')
-    top_100_similar_dataset = find_top_k_similar_dataset(
-    model=model,
-    dataset1=first_dataset_training,  # Example first dataset
-    dataset2=second_dataset_training,  # Example second dataset
-    tokenizer=tokenizer,
-    device=device,
-    top_k=100
-    )
-    print(" Top 100", top_100_similar_dataset)
+    # output_dir = os.path.dirname(args.finetuned_model_path)
+    # if output_dir and not os.path.exists(output_dir):
+    #     os.makedirs(output_dir)
+    #     print('Output file created')
     
-    # Train the model
-    # training_stats = train_model(
-    #     model, optimizer, scheduler, first_dataloader_training, second_dataloader_training, first_dataloader_validation, second_dataloader_validation, finetuned_output_path, epochs)
-    # model = torch.load(finetuned_output_path)
-    # test_stats = evaluate(model, second_test_dataloader)
-    # print(test_stats)
-    # return training_stats
+    
+    #Train the model
+    training_stats = train_model(
+        model, optimizer, scheduler, first_dataloader_training, second_dataloader_training, first_dataloader_validation, second_dataloader_validation,outname, epochs)
+    model = torch.load(finetuned_output_path)
+    test_stats = evaluate(model, second_test_dataloader)
+    print(test_stats)
+    return training_stats
 
 
 if __name__ == "__main__":
