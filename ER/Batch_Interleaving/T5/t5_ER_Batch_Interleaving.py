@@ -108,7 +108,33 @@ def create_dataloaders(train_dataset, dev_dataset, batch_size):
     )
     return train_dataloader, val_dataloader
 
-def train_model(model, optimizer, scheduler, first_dataset, second_dataset, val_dataloader, total_epochs=12):
+def create_mixed_validation_dataset(first_val_dataset, second_val_dataset, ratio_first=0.3, ratio_second=0.7):
+    first_val_size = min(len(first_val_dataset), int(len(first_val_dataset) * ratio_first))
+    second_val_size = min(len(second_val_dataset), int(len(second_val_dataset) * ratio_second))
+
+    mixed_first_val_data = random.sample(list(first_val_dataset), first_val_size)
+    mixed_second_val_data = random.sample(list(second_val_dataset), second_val_size)
+
+    mixed_val_data = mixed_first_val_data + mixed_second_val_data
+    random.shuffle(mixed_val_data)
+
+    mixed_input_ids = []
+    mixed_attention_masks = []
+    mixed_decoder_input_ids = []
+
+    for x in mixed_val_data:
+        mixed_input_ids.append(x[0].unsqueeze(0))
+        mixed_attention_masks.append(x[1].unsqueeze(0))
+        mixed_decoder_input_ids.append(x[2].unsqueeze(0))
+
+    mixed_input_ids = torch.cat(mixed_input_ids, dim=0)
+    mixed_attention_masks = torch.cat(mixed_attention_masks, dim=0)
+    mixed_decoder_input_ids = torch.cat(mixed_decoder_input_ids, dim=0)
+
+    mixed_val_dataset = TensorDataset(mixed_input_ids, mixed_attention_masks, mixed_decoder_input_ids)
+    return mixed_val_dataset
+
+def train_model(model, optimizer, scheduler, first_dataset, second_dataset, first_valdataloader, second_valdataloader, total_epochs=12):
     total_t0 = time.time()
     training_stats = []
 
@@ -140,6 +166,9 @@ def train_model(model, optimizer, scheduler, first_dataset, second_dataset, val_
         print("\nRunning Validation...")
         model.eval()
         total_eval_loss = 0
+        mixed_val_dataset = create_mixed_validation_dataset(first_valdataloader.dataset, second_valdataloader.dataset)
+        mixed_val_dataloader = DataLoader(mixed_val_dataset, sampler=SequentialSampler(mixed_val_dataset), batch_size=64)
+        val_dataloader = mixed_val_dataloader
 
         for batch in tqdm(val_dataloader):
             b_input_ids, b_input_mask, b_decoder_input_ids = batch[0].to(device), batch[1].to(device), batch[2].to(device)
@@ -185,20 +214,23 @@ def main():
 
     first_reviews_train, first_labels_train = preprocess_data(first_train_data)
     second_reviews_train, second_labels_train = preprocess_data(second_train_data)
+    first_reviews_val, first_labels_val = preprocess_data(first_val_data)
     second_reviews_val, second_labels_val = preprocess_data(second_val_data)
     
     instruction = "Classify the sentiment of the review as positive or negative or neutral:"
     
     first_input_ids_train , first_attention_mask_train , first_decoder_input_ids_train = tokenize_reviews(first_reviews_train ,first_labels_train ,tokenizer,instruction)
     second_input_ids_train , second_attention_mask_train , second_decoder_input_ids_train = tokenize_reviews(second_reviews_train ,second_labels_train ,tokenizer,instruction)
+    val_input_ids_first_val , val_attention_mask_first_val , val_decoder_input_ids_first_val = tokenize_reviews(first_reviews_val ,first_labels_val ,tokenizer,instruction)
     val_input_ids_second_val , val_attention_mask_second_val , val_decoder_input_ids_second_val = tokenize_reviews(second_reviews_val ,second_labels_val ,tokenizer,instruction)
 
     first_dataset_training= TensorDataset(first_input_ids_train ,first_attention_mask_train ,first_decoder_input_ids_train )
     second_dataset_training= TensorDataset(second_input_ids_train ,second_attention_mask_train ,second_decoder_input_ids_train )
+    first_dataset_validation= TensorDataset(val_input_ids_first_val,val_attention_mask_first_val,val_decoder_input_ids_first_val)
     second_dataset_validation= TensorDataset(val_input_ids_second_val,val_attention_mask_second_val,val_decoder_input_ids_second_val )
 
-    # interleaved_dataloader_training, total_batches = create_interleaved_dataloader( first_dataset_training, second_dataset_training, batch_size=64, first_ratio=0.125)
 
+    first_dataloader_training, first_dataloader_validation = create_dataloaders(first_dataset_training, first_dataset_validation, batch_size=64)
     second_dataset_validation= TensorDataset(val_input_ids_second_val,val_attention_mask_second_val,val_decoder_input_ids_second_val)
     _, second_dataloader_validation=create_dataloaders(second_dataset_validation ,second_dataset_validation,batch_size=64)
 
@@ -209,7 +241,7 @@ def main():
     total_steps = 7810
     scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=0, num_training_steps=total_steps)
 
-    training_stats = train_model(model, optimizer, scheduler, first_dataset_training, second_dataset_training, second_dataloader_validation, epochs)
+    training_stats = train_model(model, optimizer, scheduler, first_dataset_training, second_dataset_training, first_dataloader_validation, second_dataloader_validation, epochs)
 
     finetuned_model_dir = "./" + finetuned_model_dir
     save_model(model, tokenizer, finetuned_model_dir)
