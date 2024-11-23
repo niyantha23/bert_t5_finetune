@@ -388,36 +388,27 @@ def main():
     epochs = args.epochs
     # Load pre-trained BERT model
     # model = BertForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=3,hidden_dropout_prob=0.2)
-    if base_model is not None:
-        model = torch.load(base_model)
-        # model = torch.load(base_model, map_location=torch.device('cpu'))
-        print(f'Loading saved model from :{base_model}')
-
-    else:
-        print("No base model found or path not provided, loading BERT pre-trained model")
-        # model = BertForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=3)
-        model = BertForSequenceClassification.from_pretrained(
-            "bert-base-multilingual-cased", num_labels=3, hidden_dropout_prob=0.2)
-
-    model = model.to(device)
+    
     # Load tokenizer and tokenize data
+    model_initial = BertForSequenceClassification.from_pretrained(
+            "bert-base-multilingual-cased", num_labels=3, hidden_dropout_prob=0.2)
     tokenizer = BertTokenizer.from_pretrained('bert-base-multilingual-cased')
 
-    first_train_data = load_data(first_train_filename, 5000)
-    #first_train_data = load_data(first_train_filename, None)
+    #first_train_data = load_data(first_train_filename, 5000)
+    first_train_data = load_data(first_train_filename, None)
     first_val_data = load_data(first_val_filename, None)
-    #second_train_data = load_data(second_train_filename, None)
-    second_train_data = load_data(second_train_filename, 5000)
+    second_train_data = load_data(second_train_filename, None)
+    #second_train_data = load_data(second_train_filename, 5000)
     second_val_data = load_data(second_val_filename, None)
     second_test_data = load_data(second_test_filename, None)
 
     top_similar_dataset = find_top_k_similar_dataset(
-    model=model,
+    model=model_initial,
     dataset1=first_train_data,  # Example first dataset
     dataset2=second_train_data,  # Example second dataset
     tokenizer=tokenizer,
     device=device,
-    top_k=1000
+    top_k=5000
     )
     
 
@@ -463,7 +454,18 @@ def main():
         batch_size=args.batch_size
     )
 
-    
+    if base_model is not None:
+        model = torch.load(base_model)
+        # model = torch.load(base_model, map_location=torch.device('cpu'))
+        print(f'Loading saved model from :{base_model}')
+
+    else:
+        print("No base model found or path not provided, loading BERT pre-trained model")
+        # model = BertForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=3)
+        model = BertForSequenceClassification.from_pretrained(
+            "bert-base-multilingual-cased", num_labels=3, hidden_dropout_prob=0.2)
+
+    model = model.to(device)
 
     # Set up optimizer and scheduler
     optimizer = AdamW(model.parameters(), lr=args.learning_rate,
