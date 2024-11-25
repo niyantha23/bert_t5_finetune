@@ -16,7 +16,7 @@ SECOND_TRAIN_FILE=$6
 SECOND_VAL_FILE=$7
 SECOND_TEST_FILE=$8
 BASE_MODEL_FILE=$9
-FINETUNED_MODEL_OUT=$10
+FINETUNED_MODEL_OUT=${10}
 
 # Run the Python script with the provided arguments
 python3 finetune_bert_ER.py \
